@@ -1,0 +1,139 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Description: >
+  This template represents a sample application that a development team would deploy through the CI/CD pipeline
+  in the pipeline.yml template.  This template deploys an EC2 instance in a VPC and creates a role that can communicate 
+  with an S3 bucket.  Note that even though this role granted access to all S3 actions, the permissions boundary
+  deployed in pipeline.yml limits access to only the s3:GetObject and s3:PutObject actions.  This is not a production-ready
+  implementation of an EC2 deployment and should only be used as an example to illustrate the concepts discussed in the
+  corresponding blog post.
+
+
+Parameters:
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+Resources:
+  ApplicationBucket:
+    Type: AWS::S3::Bucket
+
+  ApplicationInstance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref LatestAmiId
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sdm"
+          Ebs: 
+            VolumeType: "io1"
+            Iops: "200"
+            DeleteOnTermination: "false"
+            VolumeSize: "20"
+        - DeviceName: "/dev/sdk"
+          NoDevice: {}
+      SubnetId: !Ref PublicSubnet1
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref ApplicationInstanceProfile
+
+  ApplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # Roles deployed by our CI/CD pipeline must be in the application-roles path.
+      Path: /application-roles/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${ApplicationBucket.Arn}/*"
+      # This was created in the pipeline.yml template
+      PermissionsBoundary: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ApplicationPermissionsBoundary
+
+  # This policy is not part of the blog post and is only used to allow you to connect to the EC2 instance deployed in this template.
+  # You can remove this policy if you're not using SSM Session Manager.
+  AllowSSMSessionManagerToConnectToInstancePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /application-role-policies/
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssmmessages:CreateControlChannel
+              - ssmmessages:CreateDataChannel
+              - ssmmessages:OpenControlChannel
+              - ssmmessages:OpenDataChannel
+              - ssm:UpdateInstanceInformation
+            Resource: "*"
+          - Effect: Allow
+            Action: s3:GetEncryptionConfiguration
+            Resource: "*"
+      Roles:
+        - !Ref ApplicationRole
+
+  ApplicationInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /application-instance-profiles/
+      Roles:
+        - !Ref ApplicationRole
+
+
+  # Resources related to the blog post end here.  The rest of this template deploys a simple VPC configuration with a public subnet.
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.192.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.192.10.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1

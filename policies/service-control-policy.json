@@ -1,0 +1,29 @@
+{
+    "Id": "ServiceControlPolicy",
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Sid": "DenyIfRequestIsNotUsingSSL",    
+        "Effect": "Deny",    
+        "Action": "*",    
+        "Resource": "*",    
+        "Condition": {
+            "BoolIfExists": {
+                "aws:SecureTransport": "false"        
+            }
+        }
+    },
+    {
+        "Sid": "PreventModificationOfPublicAccessBlock",
+        "Effect": "Deny",
+        "Action": [
+            "s3:PutAccountPublicAccessBlock",
+            "s3:PutBucketPublicAccessBlock"
+        ],
+        "Resource": "*",
+        "Condition": {
+            "ArnNotLike": {
+                "aws:PrincipalArn": "arn:aws:iam::*:role/CentralCloudTeam"
+            }
+        }
+    }]
+}

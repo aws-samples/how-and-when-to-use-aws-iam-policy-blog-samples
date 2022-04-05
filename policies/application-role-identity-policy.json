@@ -1,0 +1,19 @@
+{
+    "Id": "EC2ApplicationRolePolicy",
+    "Version": "2012-10-17",
+    "Statement": [{   
+        "Effect": "Allow",    
+        "Action": [
+            "s3:PutObject",
+            "s3:GetObject"
+        ],    
+        "Resource": "arn:aws:s3:::BucketA/*"
+    },
+    {   
+        "Effect": "Allow",    
+        "Action": [
+            "s3:GetObject"
+        ],    
+        "Resource": "arn:aws:s3:::BucketB/*"
+    }]
+}

@@ -1,0 +1,341 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Resources:
+  CentralCloudTeamReadonlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CentralCloudTeamReadonlyRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess
+
+  DeveloperReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DeveloperReadOnlyRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: readonly
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Effect: Allow
+              Action:
+                - cloudformation:Describe*
+                - cloudformation:Get*
+                - cloudformation:List*
+                - cloudwatch:Describe*
+                - cloudwatch:Get*
+                - cloudwatch:List*
+                - ec2:Describe*
+                - ec2:Get*
+                - ec2:List*
+                - ec2:Search*
+                - s3:Describe*
+                - s3:Get*
+                - s3:List*
+                - sqs:Get*
+                - sqs:List*
+                - logs:Describe*
+                - logs:FilterLogEvents
+                - logs:Get*
+                - logs:List*
+                - logs:StartQuery
+                - logs:StopQuery
+              Resource: "*"
+
+  # This is the repository where developers check in their CloudFormation templates for their applications that get
+  # deployed through their CI/CD pipeline.
+  SampleRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: sample-repo
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: True
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  CloudWatchEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: cwe-pipeline-execution
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${ApplicationPipeline} 
+
+  CloudWatchEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - 'CodeCommit Repository State Change'
+        resources:
+          - !GetAtt SampleRepo.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - main
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${ApplicationPipeline} 
+          RoleArn: !GetAtt CloudWatchEventRole.Arn
+          Id: codepipeline-AppPipeline
+
+  # This role does not appear in the blog post and is only needed if using CodePipeline as your CI/CD pipeline
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:GetObjectVersion                  
+                Resource: 
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:UploadArchive
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:CancelUploadArchive
+                Resource: !GetAtt SampleRepo.Arn
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt CICDPipelineRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: "cloudformation.amazonaws.com"
+          
+
+  # This is the permissions boundary that appears in the blog post that we attach to the CI/CD pipeline role.
+  PermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: ApplicationPermissionsBoundary
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - sqs:ChangeMessageVisibility
+              - sqs:DeleteMessage
+              - sqs:ReceiveMessage
+              - sqs:SendMessage
+              - sqs:PurgeQueue
+              - sqs:GetQueueUrl
+            Resource: "*"
+
+          # These actions do not appear in the blog post and only exist to allow us to connect to our sample EC2 instance
+          # using SSM Session Manager: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html
+          # You can remove these actions if you want to reuse this template for your own purposes.
+          - Effect: Allow
+            Action:
+              - ssmmessages:CreateControlChannel
+              - ssmmessages:CreateDataChannel
+              - ssmmessages:OpenControlChannel
+              - ssmmessages:OpenDataChannel
+              - s3:GetEncryptionConfiguration
+              - ssm:UpdateInstanceInformation
+            Resource: "*"
+
+  # This is the CI/CD pipeline role that appears in the blog post.  In this example, it's used to deploy a
+  # CloudFormation template, but you can set up your CI/CD pipeline role in the same manner if you don't use
+  # CloudFormation to deploy.
+  CICDPipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - sqs:*
+                  - s3:*
+                  - cloudwatch:*
+                  - cloudformation:*
+                  - logs:*
+                Resource: "*"
+
+                # This allows our deployment to pull AWS-owned AMIs from SSM parameter store
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/*
+
+                # The CI/CD pipeline can create additional IAM roles, but must attach the PermissionsBoundary policy
+                # as a permissions boundary.  It also must create the roles in a protected "application-roles" path.
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+                Condition:
+                  ArnEquals:
+                    iam:PermissionsBoundary: !Ref PermissionsBoundary  
+
+                # The CI/CD pipeline can attach policies to roles, but only those policies that it created and only those
+                # roles that are limited by a permissions boundary.
+              - Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+                Condition:
+                  ArnEquals:
+                    iam:PermissionsBoundary: !Ref PermissionsBoundary 
+                  ArnLike:
+                    iam:PolicyARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/application-role-policies/* 
+
+                # The pipeline can only delete or modify roles that live in the protected "application-roles" path.        
+              - Effect: Allow
+                Action:
+                  - iam:DeleteRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:GetRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+
+                # The pipeline can only create and modify policies in the application-role-policies path.  This prevents
+                # it from modifying policies that may be attached to other roles.
+              - Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:DeletePolicy
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:GetPolicy
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                  - iam:SetDefaultPolicyVersion
+                  - iam:ListPolicyVersions
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/application-role-policies/*
+
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:DeleteInstanceProfile
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/application-instance-profiles/*
+
+                # Importantly, the pipeline can only pass roles that exist in the application-roles path and are
+                # thus limited by the permissions boundary.
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+
+  # This is the actual CI/CD pipeline.  This example uses a CodePipeline pipeline to deploy a CloudFormation template, but you 
+  # can use whatever CI/CD technology you're comfortable with.
+  ApplicationPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages: 
+        - Name: Source
+          Actions:
+          - Name: Source
+            ActionTypeId:
+              Category: Source
+              Owner: AWS
+              Provider: CodeCommit
+              Version: 1
+            Configuration:
+              RepositoryName: !GetAtt SampleRepo.Name
+              BranchName: main
+              PollForSourceChanges: false
+            OutputArtifacts:
+              - Name: AppSource
+            RunOrder: 1
+        - Name: Deploy
+          Actions:
+          - Name: CloudFormationDeploy
+            InputArtifacts:
+              - Name: AppSource
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: 1
+              Provider: CloudFormation
+            Configuration:
+              ActionMode: REPLACE_ON_FAILURE
+              StackName: MySampleStack
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !GetAtt CICDPipelineRole.Arn
+              TemplatePath: AppSource::application.yml
+            RunOrder: 1

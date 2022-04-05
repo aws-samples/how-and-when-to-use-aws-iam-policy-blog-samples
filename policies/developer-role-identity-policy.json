@@ -1,0 +1,33 @@
+{
+    "Id": "DeveloperRoleBaselinePolicy",
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudformation:Describe*",
+                "cloudformation:Get*",
+                "cloudformation:List*",
+                "cloudwatch:Describe*",
+                "cloudwatch:Get*",
+                "cloudwatch:List*",
+                "ec2:Describe*",
+                "ec2:Get*",
+                "ec2:List*",
+                "ec2:Search*",
+                "s3:Describe*",
+                "s3:Get*",
+                "s3:List*",
+                "sqs:Get*",
+                "sqs:List*",
+                "logs:Describe*",
+                "logs:FilterLogEvents",
+                "logs:Get*",
+                "logs:List*",
+                "logs:StartQuery",
+                "logs:StopQuery"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

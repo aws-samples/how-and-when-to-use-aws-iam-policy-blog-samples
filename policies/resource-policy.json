@@ -1,0 +1,13 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Principal": {
+            "AWS": "arn:aws:iam::111111111111:role/ApplicationTeamARole"
+        },
+        "Effect": "Allow",    
+        "Action": [
+            "s3:GetObject"
+        ],    
+        "Resource": "arn:aws:s3:::BucketB/*"
+    }]
+}

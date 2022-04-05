@@ -1,0 +1,19 @@
+{
+    "Id": "PermissionsBoundaryPolicy",
+    "Version": "2012-10-17",
+    "Statement": [{   
+        "Effect": "Allow",    
+        "Action": [
+            "s3:PutObject",
+            "s3:GetObject",
+            "sqs:ChangeMessageVisibility",
+            "sqs:DeleteMessage",
+            "sqs:ReceiveMessage",
+            "sqs:SendMessage",
+            "sqs:PurgeQueue",
+            "sqs:GetQueueUrl",
+            "logs:PutLogEvents"        
+         ],    
+        "Resource": "*"
+    }]
+}

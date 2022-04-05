@@ -1,0 +1,93 @@
+{
+    "Id": "CICDPipelineBaselinePolicy",
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",    
+        "Action": [
+            "ec2:*",
+            "sqs:*",
+            "s3:*",
+            "cloudwatch:*",
+            "cloudformation:*",
+            "logs:*"           
+        ],
+        "Resource": "*"
+    },
+    {
+        "Effect": "Allow",
+        "Action": "ssm:GetParameter*",
+        "Resource": "arn:aws:ssm:*::parameter/aws/service/*"
+    },
+    {
+        "Effect": "Allow",
+        "Action": [
+            "iam:CreateRole",
+            "iam:PutRolePolicy",
+            "iam:DeleteRolePolicy"
+        ],
+        "Resource": "arn:aws:iam::111111111111:role/application-roles/*",
+        "Condition": {
+            "ArnEquals": {
+                "iam:PermissionsBoundary": "arn:aws:iam::111111111111:policy/PermissionsBoundary"
+            }            
+        }
+    }, 
+    {
+        "Effect": "Allow",
+        "Action": [
+            "iam:AttachRolePolicy",
+            "iam:DetachRolePolicy"
+        ],
+        "Resource": "arn:aws:iam::111111111111:role/application-roles/*",
+        "Condition": {
+            "ArnEquals": {
+                "iam:PermissionsBoundary": "arn:aws:iam::111111111111:policy/PermissionsBoundary"
+            },
+            "ArnLike": {
+                "iam:PolicyARN": "arn:aws:iam::111111111111:policy/application-role-policies/*"
+            }          
+        }
+    }, 
+    {
+        "Effect": "Allow",
+        "Action": [
+            "iam:DeleteRole",
+            "iam:TagRole",
+            "iam:UntagRole",
+            "iam:GetRole",
+            "iam:GetRolePolicy"
+        ],
+        "Resource": "arn:aws:iam::111111111111:role/application-roles/*"
+    },
+      
+    {
+        "Effect": "Allow",
+        "Action": [
+            "iam:CreatePolicy",
+            "iam:DeletePolicy",
+            "iam:CreatePolicyVersion",            
+            "iam:DeletePolicyVersion",
+            "iam:GetPolicy",
+            "iam:TagPolicy",
+            "iam:UntagPolicy",
+            "iam:SetDefaultPolicyVersion",
+            "iam:ListPolicyVersions"
+         ],
+        "Resource": "arn:aws:iam::111111111111:policy/application-role-policies/*"
+    },
+    {
+        "Effect": "Allow",
+        "Action": [
+            "iam:CreateInstanceProfile",
+            "iam:AddRoleToInstanceProfile",
+            "iam:RemoveRoleFromInstanceProfile",
+            "iam:DeleteInstanceProfile"
+        ],
+        "Resource": "arn:aws:iam::111111111111:instance-profile/application-instance-profiles/*"
+    },
+    {
+        "Effect": "Allow",
+        "Action": "iam:PassRole",
+        "Resource": "arn:aws:iam::111111111111:role/application-roles/*"
+    }]
+}
