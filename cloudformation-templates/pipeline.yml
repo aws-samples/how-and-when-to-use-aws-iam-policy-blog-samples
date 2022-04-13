@@ -156,6 +156,7 @@ Resources:
                   - cloudformation:DescribeStacks
                   - cloudformation:CreateStack
                   - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -225,6 +226,7 @@ Resources:
                   - cloudwatch:*
                   - cloudformation:*
                   - logs:*
+                  - autoscaling:*
                 Resource: "*"
 
                 # This allows our deployment to pull AWS-owned AMIs from SSM parameter store
@@ -291,11 +293,38 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/application-instance-profiles/*
 
-                # Importantly, the pipeline can only pass roles that exist in the application-roles path and are
+                # Importantly, the pipeline can only pass roles that exist in the application-roles or approved service-linked roles path and are
                 # thus limited by the permissions boundary.
               - Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling*
+
+              # The pipeline is only allowed to create service linked roles for approved services.  As additional services are approved for use,
+              # grant access to Create and Delete SLRs for those services as appropriate.
+              - Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: autoscaling.amazonaws.com
+
+              - Effect: Allow
+                Action:
+                 - iam:DeleteServiceLinkedRole
+                 - iam:GetServiceLinkedRoleDeletionStatus
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling*
+              
+              - Effect: Allow
+                Action: iam:ListRoles
+                Resource: "*"
+
+              - Effect: Allow
+                Action: iam:GetRole
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/application-roles/*
 
   # This is the actual CI/CD pipeline.  This example uses a CodePipeline pipeline to deploy a CloudFormation template, but you 
   # can use whatever CI/CD technology you're comfortable with.
